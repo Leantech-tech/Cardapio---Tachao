@@ -5,7 +5,9 @@ import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../providers/cart_provider.dart';
 import '../theme/app_theme.dart';
-import '../widgets/comanda_link_sheet.dart';
+import '../services/comanda_service.dart';
+import '../widgets/barcode_scanner_screen.dart';
+import '../widgets/comanda_order_sheet.dart';
 
 class CartScreen extends StatefulWidget {
   const CartScreen({super.key});
@@ -30,42 +32,132 @@ class _CartScreenState extends State<CartScreen> {
     super.dispose();
   }
 
-  void _sendOrder(CartProvider cart) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: AppTheme.surface(context),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (_) => ComandaLinkSheet(
-        itens: cart.items,
-        total: cart.totalPrice,
-        onSuccess: () {
-          _confettiController.play();
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'Pedido enviado com sucesso!',
-                style: GoogleFonts.inter(fontWeight: FontWeight.w500),
-              ),
-              backgroundColor: Colors.green[600],
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              margin: const EdgeInsets.all(16),
-            ),
-          );
-          cart.clear();
-          Future.delayed(const Duration(milliseconds: 1500), () {
-            if (mounted) {
-              Navigator.pop(context);
-            }
-          });
-        },
-      ),
+  String _extrairNumeroComanda(String barcode) {
+    // Extrai apenas números do código de barras
+    final numeros = barcode.replaceAll(RegExp(r'[^0-9]'), '');
+    if (numeros.isEmpty) return '';
+
+    // PostgreSQL integer max value = 2.147.483.647
+    const int maxInt32 = 2147483647;
+    final valor = int.tryParse(numeros) ?? 0;
+
+    if (valor > maxInt32) {
+      // Se o código de barras for maior que o limite do integer,
+      // usa os últimos 9 dígitos (padrão comum em comandas)
+      return numeros.substring(numeros.length - 9);
+    }
+    return numeros;
+  }
+
+  Future<void> _sendOrder(CartProvider cart) async {
+    final barcode = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(builder: (_) => const BarcodeScannerScreen()),
     );
+
+    if (barcode == null || barcode.isEmpty) return;
+
+    final numero = _extrairNumeroComanda(barcode);
+    if (numero.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Código de barras inválido. Tente novamente.',
+              style: GoogleFonts.inter(fontWeight: FontWeight.w500),
+            ),
+            backgroundColor: Colors.orange[700],
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            margin: const EdgeInsets.all(16),
+          ),
+        );
+      }
+      return;
+    }
+
+    try {
+      final service = ComandaService();
+      const empresaId = 7;
+
+      var comanda = await service.buscarComanda(numero, empresaId);
+      comanda ??= await service.criarComanda(numero, empresaId);
+
+      final comandaId = comanda['id'] as int;
+      final mesaId = comanda['mesa_id'] as int?;
+
+      await service.adicionarItens(comandaId, empresaId, cart.items);
+      await service.atualizarTotalComanda(comandaId);
+      await service.registrarLog(
+        comandaId,
+        mesaId,
+        empresaId,
+        'LANCAMENTO_ITEM',
+        {
+          'numero_comanda': numero,
+          'qtd_itens': cart.items.length,
+          'valor_total': cart.totalPrice,
+        },
+      );
+      await service.adicionarFilaImpressao(comandaId, empresaId, cart.items, numero);
+
+      if (!mounted) return;
+
+      // Mostra o pedido vinculado à comanda
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: AppTheme.surface(context),
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        builder: (_) => ComandaOrderSheet(
+          numeroComanda: numero,
+          itens: cart.items,
+          total: cart.totalPrice,
+        ),
+      );
+
+      _confettiController.play();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Pedido enviado com sucesso!',
+            style: GoogleFonts.inter(fontWeight: FontWeight.w500),
+          ),
+          backgroundColor: Colors.green[600],
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          margin: const EdgeInsets.all(16),
+        ),
+      );
+      cart.clear();
+      Future.delayed(const Duration(milliseconds: 1500), () {
+        if (mounted) {
+          Navigator.pop(context);
+        }
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Erro ao enviar pedido: $e',
+            style: GoogleFonts.inter(fontWeight: FontWeight.w500),
+          ),
+          backgroundColor: Colors.red[600],
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          margin: const EdgeInsets.all(16),
+        ),
+      );
+    }
   }
 
   String _formatPrice(double price) {
@@ -388,7 +480,7 @@ class _CartScreenState extends State<CartScreen> {
                   Padding(
                     padding: const EdgeInsets.only(top: 4),
                     child: Text(
-                      item.selectedOptions.values.join(' / '),
+                      item.selectedOptionsDisplay,
                       style: GoogleFonts.inter(
                         fontSize: 12,
                         color: AppTheme.textSecondary(context),

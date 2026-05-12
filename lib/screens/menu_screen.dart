@@ -15,6 +15,9 @@ import '../widgets/product_card.dart';
 import '../widgets/login_sheet.dart';
 import '../widgets/table_link_sheet.dart';
 import '../widgets/product_card_grid.dart';
+import '../widgets/barcode_scanner_screen.dart';
+import '../widgets/comanda_viewer_sheet.dart';
+import '../services/comanda_service.dart';
 import 'cart_screen.dart';
 import 'product_detail_screen.dart';
 
@@ -42,7 +45,7 @@ class _MenuScreenState extends State<MenuScreen> {
           (c) => c.id == selectedCategoryId,
           orElse: () => categories.first,
         )
-        .name;
+        .displayName;
   }
 
   @override
@@ -65,6 +68,126 @@ class _MenuScreenState extends State<MenuScreen> {
       context,
       MaterialPageRoute(builder: (_) => const CartScreen()),
     );
+  }
+
+  String _extrairNumeroComanda(String barcode) {
+    final numeros = barcode.replaceAll(RegExp(r'[^0-9]'), '');
+    if (numeros.isEmpty) return '';
+
+    const int maxInt32 = 2147483647;
+    final valor = int.tryParse(numeros) ?? 0;
+
+    if (valor > maxInt32) {
+      return numeros.substring(numeros.length - 9);
+    }
+    return numeros;
+  }
+
+  Future<void> _consultarComanda() async {
+    final barcode = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(builder: (_) => const BarcodeScannerScreen()),
+    );
+
+    if (barcode == null || barcode.isEmpty) return;
+
+    final numero = _extrairNumeroComanda(barcode);
+    if (numero.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Código de barras inválido. Tente novamente.',
+              style: GoogleFonts.inter(fontWeight: FontWeight.w500),
+            ),
+            backgroundColor: Colors.orange[700],
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            margin: const EdgeInsets.all(16),
+          ),
+        );
+      }
+      return;
+    }
+
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(
+        child: CircularProgressIndicator(color: AppTheme.tachaoRed),
+      ),
+    );
+
+    try {
+      final service = ComandaService();
+      const empresaId = 7;
+
+      final comanda = await service.buscarComanda(numero, empresaId);
+
+      if (!mounted) return;
+      Navigator.pop(context); // fecha loading
+
+      if (comanda == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Comanda não encontrada.',
+              style: GoogleFonts.inter(fontWeight: FontWeight.w500),
+            ),
+            backgroundColor: Colors.orange[700],
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            margin: const EdgeInsets.all(16),
+          ),
+        );
+        return;
+      }
+
+      final comandaId = comanda['id'] as int;
+      final status = comanda['status'] as String? ?? 'ABERTA';
+      final totalComanda = (comanda['valor_total'] as num?)?.toDouble() ?? 0.0;
+
+      final itens = await service.buscarItensComanda(comandaId);
+
+      if (!mounted) return;
+
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: AppTheme.surface(context),
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        builder: (_) => ComandaViewerSheet(
+          numeroComanda: numero,
+          itens: itens,
+          total: totalComanda,
+          status: status,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.pop(context); // fecha loading
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Erro ao consultar comanda: \$e',
+            style: GoogleFonts.inter(fontWeight: FontWeight.w500),
+          ),
+          backgroundColor: Colors.red[600],
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          margin: const EdgeInsets.all(16),
+        ),
+      );
+    }
   }
 
   void _openLoginSheet() {
@@ -193,139 +316,51 @@ class _MenuScreenState extends State<MenuScreen> {
     final storeStatus = StoreStatusHelper.checkStatus(DateTime.now());
 
     return Container(
-      padding: EdgeInsets.all(isTablet ? 16 : 14),
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 10),
       decoration: BoxDecoration(
-        color: AppTheme.inputBg(context),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.border(context)),
+        color: storeStatus.isOpen
+            ? (storeStatus.isClosingSoon
+                ? const Color(0xFFFFF3E0)
+                : const Color(0xFFE8F5E9))
+            : const Color(0xFFFFEBEE),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: storeStatus.isOpen
+              ? (storeStatus.isClosingSoon
+                  ? const Color(0xFFFFB300)
+                  : const Color(0xFF4CAF50))
+              : const Color(0xFFE31E24),
+        ),
       ),
-      child: Column(
+      child: Row(
         children: [
-          // Store status banner
           Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 10),
+            width: 8,
+            height: 8,
             decoration: BoxDecoration(
               color: storeStatus.isOpen
                   ? (storeStatus.isClosingSoon
-                      ? const Color(0xFFFFF3E0)
-                      : const Color(0xFFE8F5E9))
-                  : const Color(0xFFFFEBEE),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
+                      ? const Color(0xFFFFB300)
+                      : const Color(0xFF4CAF50))
+                  : const Color(0xFFE31E24),
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '${storeStatus.statusText} • ${storeStatus.nextChangeText}',
+              style: GoogleFonts.inter(
+                fontSize: isTablet ? 13 : 12,
+                fontWeight: FontWeight.w600,
                 color: storeStatus.isOpen
                     ? (storeStatus.isClosingSoon
-                        ? const Color(0xFFFFB300)
-                        : const Color(0xFF4CAF50))
-                    : const Color(0xFFE31E24),
+                        ? const Color(0xFFE65100)
+                        : const Color(0xFF2E7D32))
+                    : const Color(0xFFB71C1C),
               ),
             ),
-            child: Row(
-              children: [
-                Container(
-                  width: 8,
-                  height: 8,
-                  decoration: BoxDecoration(
-                    color: storeStatus.isOpen
-                        ? (storeStatus.isClosingSoon
-                            ? const Color(0xFFFFB300)
-                            : const Color(0xFF4CAF50))
-                        : const Color(0xFFE31E24),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    '${storeStatus.statusText} • ${storeStatus.nextChangeText}',
-                    style: GoogleFonts.inter(
-                      fontSize: isTablet ? 13 : 12,
-                      fontWeight: FontWeight.w600,
-                      color: storeStatus.isOpen
-                          ? (storeStatus.isClosingSoon
-                              ? const Color(0xFFE65100)
-                              : const Color(0xFF2E7D32))
-                          : const Color(0xFFB71C1C),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          Consumer<AuthProvider>(
-            builder: (context, authProvider, child) {
-              if (!authProvider.isLoggedIn) {
-                return const SizedBox.shrink();
-              }
-              return Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
-                decoration: BoxDecoration(
-                  color: AppTheme.tachaoRed.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: AppTheme.tachaoRed.withValues(alpha: 0.25),
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.person_outline,
-                      size: isTablet ? 16 : 14,
-                      color: AppTheme.tachaoRed,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        authProvider.userName,
-                        style: GoogleFonts.inter(
-                          fontSize: isTablet ? 13 : 12,
-                          fontWeight: FontWeight.w600,
-                          color: AppTheme.tachaoRed,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
-          const SizedBox(height: 12),
-          const Divider(height: 16, color: AppTheme.borderGrey),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(
-                Icons.access_time,
-                size: isTablet ? 18 : 16,
-                color: AppTheme.tachaoRed,
-              ),
-              const SizedBox(width: 6),
-              Flexible(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Horário de funcionamento',
-                      style: GoogleFonts.inter(
-                        fontSize: isTablet ? 12 : 11,
-                        fontWeight: FontWeight.w600,
-                        color: AppTheme.textPrimary(context),
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Domingo à Quinta - 13h00 às 21h00  |  Sexta à Sábado - 13h05 às 22h00',
-                      style: GoogleFonts.inter(
-                        fontSize: isTablet ? 12 : 11,
-                        color: AppTheme.textSecondary(context),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
           ),
         ],
       ),
@@ -377,7 +412,7 @@ class _MenuScreenState extends State<MenuScreen> {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    category.name,
+                    category.displayName,
                     style: GoogleFonts.inter(
                       fontSize: isTablet ? 12 : 9,
                       fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
@@ -591,6 +626,14 @@ class _MenuScreenState extends State<MenuScreen> {
                                         },
                                       ),
                                       IconButton(
+                                        onPressed: _consultarComanda,
+                                        icon: Icon(
+                                          Icons.receipt_long_outlined,
+                                          color: AppTheme.textSecondary(context),
+                                        ),
+                                        tooltip: 'Consultar Comanda',
+                                      ),
+                                      IconButton(
                                         onPressed: () => context.read<ThemeProvider>().toggleTheme(),
                                         icon: Icon(
                                           AppTheme.isDark(context)
@@ -705,7 +748,7 @@ class _MenuScreenState extends State<MenuScreen> {
                                                   ),
                                                   gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                                                     crossAxisCount: crossAxisCount,
-                                                    childAspectRatio: 0.85,
+                                                    childAspectRatio: 0.72,
                                                     crossAxisSpacing: 16,
                                                     mainAxisSpacing: 16,
                                                   ),

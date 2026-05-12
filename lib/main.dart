@@ -38,7 +38,7 @@ class TachaoApp extends StatelessWidget {
       child: Consumer<ThemeProvider>(
         builder: (context, themeProvider, child) {
           return MaterialApp(
-            title: 'Tachão de Ubatuba',
+            title: 'Cardápio - Tachão',
             debugShowCheckedModeBanner: false,
             scrollBehavior: AppScrollBehavior(),
             theme: AppTheme.lightTheme,

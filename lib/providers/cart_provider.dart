@@ -15,14 +15,15 @@ class CartProvider extends ChangeNotifier {
     Product product,
     int quantity,
     String? observation,
-    Map<String, String> selectedOptions,
+    Map<String, List<String>> selectedOptions,
+    Map<String, double> selectedOptionPrices,
     double optionsPrice,
   ) {
     final existingIndex = _items.indexWhere(
       (item) =>
           item.productId == product.id &&
           item.observation == observation &&
-          _mapsEqual(item.selectedOptions, selectedOptions),
+          _selectedOptionsEqual(item.selectedOptions, selectedOptions),
     );
 
     if (existingIndex >= 0) {
@@ -37,6 +38,7 @@ class CartProvider extends ChangeNotifier {
         quantity: quantity,
         observation: observation?.trim().isEmpty == true ? null : observation?.trim(),
         selectedOptions: selectedOptions,
+        selectedOptionPrices: selectedOptionPrices,
         optionsPrice: optionsPrice,
       );
       _items.add(cartItem);
@@ -66,10 +68,19 @@ class CartProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  bool _mapsEqual(Map<String, String> a, Map<String, String> b) {
+  bool _selectedOptionsEqual(
+    Map<String, List<String>> a,
+    Map<String, List<String>> b,
+  ) {
     if (a.length != b.length) return false;
     for (final key in a.keys) {
-      if (!b.containsKey(key) || a[key] != b[key]) return false;
+      if (!b.containsKey(key)) return false;
+      final listA = a[key]!..sort();
+      final listB = b[key]!..sort();
+      if (listA.length != listB.length) return false;
+      for (int i = 0; i < listA.length; i++) {
+        if (listA[i] != listB[i]) return false;
+      }
     }
     return true;
   }

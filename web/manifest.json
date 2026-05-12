@@ -1,6 +1,6 @@
 {
-    "name": "tachao_menu",
-    "short_name": "tachao_menu",
+    "name": "Cardápio - Tachão",
+    "short_name": "Cardápio - Tachão",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

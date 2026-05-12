@@ -250,6 +250,19 @@ final List<Product> mockProducts = [
           ProductOption(id: 'e3', name: 'Vidro', priceModifier: 1.50),
         ],
       ),
+      ProductOptionGroup(
+        id: 'adicionais',
+        name: 'Adicionais',
+        type: OptionGroupType.adicional,
+        qtdMin: 0,
+        qtdMax: 3,
+        options: [
+          ProductOption(id: 'a1', name: 'Leite Extra', priceModifier: 1.00),
+          ProductOption(id: 'a2', name: 'Canela', priceModifier: 0.50),
+          ProductOption(id: 'a3', name: 'Chantilly', priceModifier: 2.00),
+          ProductOption(id: 'a4', name: 'Chocolate', priceModifier: 1.50),
+        ],
+      ),
     ],
   ),
   Product(

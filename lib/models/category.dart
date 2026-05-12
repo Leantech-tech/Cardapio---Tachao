@@ -11,6 +11,8 @@ class Category {
     required this.icon,
   });
 
+  String get displayName => name.trim().replaceAll(RegExp(r'\.+$'), '');
+
   factory Category.fromJson(Map<String, dynamic> json) {
     final nome = json['nome'] as String? ?? 'Sem nome';
     return Category(

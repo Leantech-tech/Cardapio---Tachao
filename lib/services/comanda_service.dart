@@ -53,17 +53,24 @@ class ComandaService {
       final comandaItemId = response['id'] as int;
 
       if (item.selectedOptions.isNotEmpty) {
-        final modificadores = item.selectedOptions.entries.map((entry) {
-          return {
-            'comanda_item_id': comandaItemId,
-            'grupo_modificador_item_id': int.tryParse(entry.value) ?? 0,
-            'quantidade': 1,
-            'vr_adicional': 0,
-            'created_at': DateTime.now().toIso8601String(),
-          };
-        }).toList();
+        final modificadores = <Map<String, dynamic>>[];
 
-        await _client.from('comanda_item_modificador').insert(modificadores);
+        for (final entry in item.selectedOptions.entries) {
+          for (final optionId in entry.value) {
+            final vrAdicional = item.selectedOptionPrices[optionId] ?? 0.0;
+            modificadores.add({
+              'comanda_item_id': comandaItemId,
+              'grupo_modificador_item_id': int.tryParse(optionId) ?? 0,
+              'quantidade': 1,
+              'vr_adicional': vrAdicional,
+              'created_at': DateTime.now().toIso8601String(),
+            });
+          }
+        }
+
+        if (modificadores.isNotEmpty) {
+          await _client.from('comanda_item_modificador').insert(modificadores);
+        }
       }
     }
   }
@@ -97,13 +104,32 @@ class ComandaService {
     });
   }
 
+  Future<List<Map<String, dynamic>>> buscarItensComanda(int comandaId) async {
+    final response = await _client
+        .from('comanda_item')
+        .select('''
+          id,
+          quantidade,
+          valor_unitario,
+          valor_total_item,
+          observacao,
+          status,
+          produto:produto_id(nome, foto_url)
+        ''')
+        .eq('comanda_id', comandaId)
+        .eq('status', 'ATIVO')
+        .order('created_at', ascending: false);
+
+    return (response as List<dynamic>).cast<Map<String, dynamic>>();
+  }
+
   Future<void> adicionarFilaImpressao(int comandaId, int empresaId, List<CartItem> itens, String numeroComanda) async {
     final buffer = StringBuffer();
     buffer.writeln('=== NOVO PEDIDO - COMANDA $numeroComanda ===');
     for (final item in itens) {
       buffer.writeln('${item.quantity}x ${item.name}');
       if (item.selectedOptions.isNotEmpty) {
-        buffer.writeln('   Opções: ${item.selectedOptions.values.join(', ')}');
+        buffer.writeln('   Opções: ${item.selectedOptionsDisplay}');
       }
       if (item.observation != null && item.observation!.isNotEmpty) {
         buffer.writeln('   Obs: ${item.observation}');

@@ -8,6 +8,7 @@ import '../providers/cart_provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/product_badge.dart';
 import '../widgets/product_image.dart';
+import '../utils/option_group_helper.dart';
 
 class ProductDetailScreen extends StatefulWidget {
   final Product product;
@@ -23,11 +24,11 @@ class _ProductDetailScreenState extends State<ProductDetailScreen>
   int quantity = 1;
   final TextEditingController _obsController = TextEditingController();
   bool _added = false;
-  late Map<String, String> _selectedOptions;
-  late Map<String, double> _optionsPrice;
+  late Map<String, List<String>> _selectedOptions;
+  late Map<String, double> _selectedOptionPrices;
 
   double get _totalOptionsPrice {
-    return _optionsPrice.values.fold(0.0, (sum, p) => sum + p);
+    return _selectedOptionPrices.values.fold(0.0, (sum, p) => sum + p);
   }
 
   double get total => (widget.product.price + _totalOptionsPrice) * quantity;
@@ -36,12 +37,19 @@ class _ProductDetailScreenState extends State<ProductDetailScreen>
   void initState() {
     super.initState();
     _selectedOptions = {};
-    _optionsPrice = {};
-    // Seleciona a primeira opção de cada grupo por padrão
+    _selectedOptionPrices = {};
+    // Seleciona a(s) primeira(s) opção(ões) de cada grupo por padrão
     for (final group in widget.product.optionGroups) {
       if (group.options.isNotEmpty) {
-        _selectedOptions[group.id] = group.options.first.id;
-        _optionsPrice[group.id] = group.options.first.priceModifier;
+        if (group.isSingleChoice) {
+          // Modificador: seleciona apenas a primeira opção
+          final first = group.options.first;
+          _selectedOptions[group.id] = [first.id];
+          _selectedOptionPrices[first.id] = first.priceModifier;
+        } else {
+          // Adicional: não pré-seleciona nada (ou respeita qtdMin)
+          _selectedOptions[group.id] = [];
+        }
       }
     }
   }
@@ -52,27 +60,141 @@ class _ProductDetailScreenState extends State<ProductDetailScreen>
     super.dispose();
   }
 
-  void _selectOption(ProductOptionGroup group, ProductOption option) {
+  int _effectiveQtdMax(ProductOptionGroup group) {
+    return OptionGroupHelper.effectiveQtdMax(
+      group,
+      _selectedOptions,
+      widget.product.optionGroups,
+    );
+  }
+
+  void _enforceEffectiveMax() {
+    for (final group in widget.product.optionGroups) {
+      final effectiveMax = _effectiveQtdMax(group);
+      final currentList = _selectedOptions[group.id] ?? [];
+      if (currentList.length > effectiveMax) {
+        final toRemove = currentList.sublist(effectiveMax);
+        for (final id in toRemove) {
+          _selectedOptionPrices.remove(id);
+        }
+        _selectedOptions[group.id] = currentList.sublist(0, effectiveMax);
+      }
+    }
+  }
+
+  bool _isEffectivelyMultipleChoice(ProductOptionGroup group) {
+    return _effectiveQtdMax(group) > 1 || group.isMultipleChoice;
+  }
+
+  void _toggleOption(ProductOptionGroup group, ProductOption option) {
     setState(() {
-      _selectedOptions[group.id] = option.id;
-      _optionsPrice[group.id] = option.priceModifier;
+      final currentList = _selectedOptions[group.id] ?? [];
+      final effectiveMax = _effectiveQtdMax(group);
+      final isMulti = _isEffectivelyMultipleChoice(group);
+
+      if (!isMulti) {
+        // Comportamento single choice
+        if (currentList.isNotEmpty) {
+          _selectedOptionPrices.remove(currentList.first);
+        }
+        _selectedOptions[group.id] = [option.id];
+        _selectedOptionPrices[option.id] = option.priceModifier;
+      } else {
+        // Toggle múltipla escolha
+        if (currentList.contains(option.id)) {
+          // Remove se já estiver selecionado
+          if (currentList.length > group.qtdMin) {
+            currentList.remove(option.id);
+            _selectedOptionPrices.remove(option.id);
+          }
+        } else {
+          // Adiciona se não exceder o máximo efetivo
+          if (currentList.length < effectiveMax) {
+            currentList.add(option.id);
+            _selectedOptionPrices[option.id] = option.priceModifier;
+          }
+        }
+        _selectedOptions[group.id] = List.from(currentList);
+      }
+      _enforceEffectiveMax();
     });
+  }
+
+  bool _isSelected(ProductOptionGroup group, ProductOption option) {
+    final list = _selectedOptions[group.id] ?? [];
+    return list.contains(option.id);
   }
 
   String _getOptionDisplayName() {
     if (_selectedOptions.isEmpty) return '';
     final parts = <String>[];
     for (final group in widget.product.optionGroups) {
-      final selectedId = _selectedOptions[group.id];
-      if (selectedId != null) {
-        final option = group.options.firstWhere((o) => o.id == selectedId);
-        parts.add(option.name);
+      final selectedIds = _selectedOptions[group.id] ?? [];
+      for (final id in selectedIds) {
+        final option = group.options.firstWhere(
+          (o) => o.id == id,
+          orElse: () => ProductOption(id: '', name: ''),
+        );
+        if (option.name.isNotEmpty) parts.add(option.name);
       }
     }
     return parts.join(' / ');
   }
 
+  bool _canAddToCart() {
+    for (final group in widget.product.optionGroups) {
+      final selectedCount = (_selectedOptions[group.id] ?? []).length;
+      final effectiveMax = _effectiveQtdMax(group);
+      if (group.isObrigatorio && selectedCount < group.qtdMin) {
+        return false;
+      }
+      if (selectedCount < group.qtdMin) {
+        return false;
+      }
+      if (selectedCount > effectiveMax) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  String? _validationMessage() {
+    for (final group in widget.product.optionGroups) {
+      final selectedCount = (_selectedOptions[group.id] ?? []).length;
+      final effectiveMax = _effectiveQtdMax(group);
+      if (group.isObrigatorio && selectedCount < group.qtdMin) {
+        return 'Selecione pelo menos ${group.qtdMin} opção(ões) em "${group.name}"';
+      }
+      if (selectedCount < group.qtdMin) {
+        return 'Selecione pelo menos ${group.qtdMin} opção(ões) em "${group.name}"';
+      }
+      if (selectedCount > effectiveMax) {
+        return 'Selecione no máximo $effectiveMax opção(ões) em "${group.name}"';
+      }
+    }
+    return null;
+  }
+
   void _addToCart() async {
+    final validation = _validationMessage();
+    if (validation != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            validation,
+            style: GoogleFonts.inter(fontWeight: FontWeight.w500),
+          ),
+          backgroundColor: Colors.orange[700],
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          margin: const EdgeInsets.all(16),
+        ),
+      );
+      return;
+    }
+
     HapticFeedback.lightImpact();
 
     final cartProvider = context.read<CartProvider>();
@@ -83,6 +205,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen>
       quantity,
       observation.isEmpty ? null : observation,
       _selectedOptions,
+      _selectedOptionPrices,
       _totalOptionsPrice,
     );
 
@@ -118,6 +241,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen>
 
   @override
   Widget build(BuildContext context) {
+    final hasOptions = widget.product.optionGroups.isNotEmpty;
+    final canAdd = _canAddToCart();
+
     return Scaffold(
       backgroundColor: AppTheme.background(context),
       body: CustomScrollView(
@@ -141,39 +267,39 @@ class _ProductDetailScreenState extends State<ProductDetailScreen>
             ),
             flexibleSpace: FlexibleSpaceBar(
               background: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      _buildProductImage(context),
-                    // Gradient overlay at bottom
-                    Positioned(
-                      bottom: 0,
-                      left: 0,
-                      right: 0,
-                      child: Container(
-                        height: 100,
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              Colors.transparent,
-                              Colors.black.withValues(alpha: 0.5),
-                            ],
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                          ),
+                fit: StackFit.expand,
+                children: [
+                  _buildProductImage(context),
+                  // Gradient overlay at bottom
+                  Positioned(
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    child: Container(
+                      height: 100,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            Colors.transparent,
+                            Colors.black.withValues(alpha: 0.5),
+                          ],
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
                         ),
                       ),
                     ),
-                    // Badge
-                    if (widget.product.badge != null)
-                      Positioned(
-                        top: 80,
-                        left: 16,
-                        child: ProductBadge(badge: widget.product.badge!),
-                      ),
-                  ],
-                ),
+                  ),
+                  // Badge
+                  if (widget.product.badge != null)
+                    Positioned(
+                      top: 80,
+                      left: 16,
+                      child: ProductBadge(badge: widget.product.badge!),
+                    ),
+                ],
               ),
             ),
+          ),
           // Content
           SliverToBoxAdapter(
             child: Padding(
@@ -194,14 +320,14 @@ class _ProductDetailScreenState extends State<ProductDetailScreen>
                   const SizedBox(height: 16),
                   // Price
                   Text(
-                    'R\$ ${widget.product.price.toStringAsFixed(2).replaceAll('.', ',')}',
+                    widget.product.priceDisplay,
                     style: GoogleFonts.poppins(
                       fontSize: 24,
                       fontWeight: FontWeight.w700,
                       color: AppTheme.tachaoRed,
                     ),
                   ),
-                  if (widget.product.optionGroups.isNotEmpty)
+                  if (hasOptions)
                     Padding(
                       padding: const EdgeInsets.only(top: 4),
                       child: Text(
@@ -235,28 +361,66 @@ class _ProductDetailScreenState extends State<ProductDetailScreen>
                   ),
                   const SizedBox(height: 24),
                   // Option Groups
-                  if (widget.product.optionGroups.isNotEmpty)
+                  if (hasOptions)
                     ...widget.product.optionGroups.map((group) {
+                      final selectedCount =
+                          (_selectedOptions[group.id] ?? []).length;
+                      final effectiveMax = _effectiveQtdMax(group);
+                      final isValid = selectedCount >= group.qtdMin &&
+                          selectedCount <= effectiveMax;
+
                       return Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            group.name,
-                            style: GoogleFonts.poppins(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              color: AppTheme.textPrimary(context),
-                            ),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  group.name,
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppTheme.textPrimary(context),
+                                  ),
+                                ),
+                              ),
+                              if (group.qtdMin > 0 || effectiveMax > 1)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: isValid
+                                        ? Colors.green.withValues(alpha: 0.1)
+                                        : Colors.orange.withValues(alpha: 0.1),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    group.qtdMin == effectiveMax
+                                        ? 'Escolha ${group.qtdMin}'
+                                        : group.qtdMin > 0
+                                            ? 'Min ${group.qtdMin} / Max $effectiveMax'
+                                            : 'Max $effectiveMax',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w500,
+                                      color: isValid
+                                          ? Colors.green[700]
+                                          : Colors.orange[700],
+                                    ),
+                                  ),
+                                ),
+                            ],
                           ),
                           const SizedBox(height: 10),
                           Wrap(
                             spacing: 8,
                             runSpacing: 8,
                             children: group.options.map((option) {
-                              final isSelected =
-                                  _selectedOptions[group.id] == option.id;
+                              final isSelected = _isSelected(group, option);
                               return GestureDetector(
-                                onTap: () => _selectOption(group, option),
+                                onTap: () => _toggleOption(group, option),
                                 child: AnimatedContainer(
                                   duration: const Duration(milliseconds: 200),
                                   padding: const EdgeInsets.symmetric(
@@ -277,17 +441,37 @@ class _ProductDetailScreenState extends State<ProductDetailScreen>
                                   child: Column(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      Text(
-                                        option.name,
-                                        style: GoogleFonts.inter(
-                                          fontSize: 13,
-                                          fontWeight: isSelected
-                                              ? FontWeight.w600
-                                              : FontWeight.w500,
-                                          color: isSelected
-                                              ? Colors.white
-                                              : AppTheme.textPrimary(context),
-                                        ),
+                                      Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          if (_isEffectivelyMultipleChoice(group))
+                                            Padding(
+                                              padding: const EdgeInsets.only(
+                                                right: 6,
+                                              ),
+                                              child: Icon(
+                                                isSelected
+                                                    ? Icons.check_box
+                                                    : Icons.check_box_outline_blank,
+                                                size: 16,
+                                                color: isSelected
+                                                    ? Colors.white
+                                                    : AppTheme.textSecondary(context),
+                                              ),
+                                            ),
+                                          Text(
+                                            option.name,
+                                            style: GoogleFonts.inter(
+                                              fontSize: 13,
+                                              fontWeight: isSelected
+                                                  ? FontWeight.w600
+                                                  : FontWeight.w500,
+                                              color: isSelected
+                                                  ? Colors.white
+                                                  : AppTheme.textPrimary(context),
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                       if (option.priceModifier > 0)
                                         Text(
@@ -463,7 +647,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen>
                   ),
                 ),
               ElevatedButton(
-                onPressed: _added ? null : _addToCart,
+                onPressed: (_added || !canAdd) ? null : _addToCart,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _added ? Colors.green[600] : AppTheme.tachaoRed,
                   foregroundColor: Colors.white,
