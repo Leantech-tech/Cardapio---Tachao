@@ -1,0 +1,19 @@
+# Nixpacks configuration for deploying the Flutter app as a web site.
+# This pins nixpkgs to a snapshot recent enough to include Dart >= 3.10.4,
+# which fixes the "The current Dart SDK version is 3.0.6" error.
+
+# Disable the default Dart provider so we can use Flutter commands instead.
+providers = []
+
+[phases.setup]
+nixpkgsArchive = '4eec65df50d796a8fd9c146a09b5007916ce376b'
+nixPkgs = ['flutter', 'python3']
+
+[phases.install]
+cmds = ['flutter pub get']
+
+[phases.build]
+cmds = ['flutter build web --release']
+
+[start]
+cmd = 'python3 -m http.server ${PORT:-3000} --directory build/web'
