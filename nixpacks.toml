@@ -26,7 +26,7 @@ cmds = [
 ]
 
 [start]
-cmd = 'mkdir -p /tmp/nginx && envsubst \'${PORT}\' < /app/nginx.conf > /tmp/nginx/nginx.conf && nginx -c /tmp/nginx/nginx.conf -g "daemon off;"'
+cmd = """mkdir -p /tmp/nginx && envsubst '${PORT}' < /app/nginx.conf > /tmp/nginx/nginx.conf && nginx -c /tmp/nginx/nginx.conf -g "daemon off;""""
 
 [deploy]
 healthcheck = '/'
