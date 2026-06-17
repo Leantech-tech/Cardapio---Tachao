@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:confetti/confetti.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import '../providers/cart_provider.dart';
 import '../theme/app_theme.dart';
 import '../services/comanda_service.dart';
 import '../widgets/barcode_scanner_screen.dart';
 import '../widgets/comanda_order_sheet.dart';
+import '../widgets/adaptive_image.dart';
 
 class CartScreen extends StatefulWidget {
   const CartScreen({super.key});
@@ -179,12 +179,13 @@ class _CartScreenState extends State<CartScreen> {
     }
 
     if (imagePath.startsWith('http')) {
-      return CachedNetworkImage(
+      return AdaptiveNetworkImage(
+        key: ValueKey(imagePath),
         imageUrl: imagePath,
         width: 80,
         height: 80,
         fit: BoxFit.cover,
-        placeholder: (context, url) => Container(
+        placeholder: (context) => Container(
           width: 80,
           height: 80,
           color: AppTheme.inputBg(context),
@@ -192,19 +193,16 @@ class _CartScreenState extends State<CartScreen> {
             child: CircularProgressIndicator(color: AppTheme.tachaoRed, strokeWidth: 2),
           ),
         ),
-        errorWidget: (context, url, error) {
-          debugPrint('Erro ao carregar imagem do carrinho: $url | $error');
-          return Container(
-            width: 80,
-            height: 80,
-            color: AppTheme.inputBg(context),
-            child: Icon(
-              Icons.image_not_supported,
-              color: AppTheme.textSecondary(context),
-              size: 28,
-            ),
-          );
-        },
+        errorBuilder: (context, error) => Container(
+          width: 80,
+          height: 80,
+          color: AppTheme.inputBg(context),
+          child: Icon(
+            Icons.image_not_supported,
+            color: AppTheme.textSecondary(context),
+            size: 28,
+          ),
+        ),
       );
     }
 

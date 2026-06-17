@@ -3,9 +3,9 @@
     "short_name": "Cardápio - Tachão",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#B71C1C",
+    "theme_color": "#B71C1C",
+    "description": "Cardápio digital do Tachão de Ubatuba - Doces Artesanais desde 1977.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

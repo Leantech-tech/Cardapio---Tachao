@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import '../models/product.dart';
+import 'adaptive_image.dart';
 
 class ProductImage extends StatelessWidget {
   final Product product;
@@ -66,16 +66,12 @@ class ProductImage extends StatelessWidget {
         child: _Placeholder(style: style),
       );
     } else if (product.imagePath.startsWith('http')) {
-      image = CachedNetworkImage(
+      image = AdaptiveNetworkImage(
+        key: ValueKey(product.imagePath),
         imageUrl: product.imagePath,
         fit: fit,
-        fadeInDuration: Duration.zero,
-        fadeOutDuration: Duration.zero,
-        placeholder: (context, url) => _Placeholder(style: style),
-        errorWidget: (context, url, error) {
-          debugPrint('Erro ao carregar imagem: $url | $error');
-          return _Placeholder(style: style);
-        },
+        placeholder: (context) => _Placeholder(style: style),
+        errorBuilder: (context, error) => _Placeholder(style: style),
       );
     } else {
       image = Image.asset(

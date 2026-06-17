@@ -756,6 +756,7 @@ class _MenuScreenState extends State<MenuScreen> {
                                                   itemBuilder: (context, index) {
                                                     final product = filteredProducts[index];
                                                     return ProductCardGrid(
+                                                      key: ValueKey('grid_${product.id}'),
                                                       product: product,
                                                       index: index,
                                                       onTap: () => _openProductDetail(product),
@@ -774,6 +775,7 @@ class _MenuScreenState extends State<MenuScreen> {
                                                   itemBuilder: (context, index) {
                                                     final product = filteredProducts[index];
                                                     return ProductCard(
+                                                      key: ValueKey('list_${product.id}'),
                                                       product: product,
                                                       index: index,
                                                       onTap: () => _openProductDetail(product),

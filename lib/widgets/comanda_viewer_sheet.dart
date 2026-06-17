@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import '../theme/app_theme.dart';
+import 'adaptive_image.dart';
 
 class ComandaViewerSheet extends StatelessWidget {
   final String numeroComanda;
@@ -172,12 +172,13 @@ class ComandaViewerSheet extends StatelessWidget {
                         ClipRRect(
                           borderRadius: BorderRadius.circular(10),
                           child: fotoUrl.isNotEmpty
-                              ? CachedNetworkImage(
+                              ? AdaptiveNetworkImage(
+                                  key: ValueKey(fotoUrl),
                                   imageUrl: fotoUrl,
                                   width: 56,
                                   height: 56,
                                   fit: BoxFit.cover,
-                                  placeholder: (context, url) => Container(
+                                  placeholder: (context) => Container(
                                     width: 56,
                                     height: 56,
                                     color: AppTheme.inputBg(context),
@@ -188,7 +189,7 @@ class ComandaViewerSheet extends StatelessWidget {
                                       ),
                                     ),
                                   ),
-                                  errorWidget: (context, url, error) => Container(
+                                  errorBuilder: (context, error) => Container(
                                     width: 56,
                                     height: 56,
                                     color: AppTheme.inputBg(context),

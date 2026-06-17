@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../models/product.dart';
@@ -15,6 +16,7 @@ class HeroCarousel extends StatefulWidget {
 class _HeroCarouselState extends State<HeroCarousel> {
   final PageController _pageController = PageController();
   int _currentPage = 0;
+  Timer? _autoSlideTimer;
 
   List<Map<String, dynamic>> get _banners {
     if (widget.products != null && widget.products!.isNotEmpty) {
@@ -58,24 +60,27 @@ class _HeroCarouselState extends State<HeroCarousel> {
   @override
   void initState() {
     super.initState();
-    Future.delayed(const Duration(seconds: 4), _autoSlide);
+    _startAutoSlide();
   }
 
-  void _autoSlide() {
-    if (!mounted) return;
-    if (_pageController.hasClients) {
-      final next = (_currentPage + 1) % _banners.length;
-      _pageController.animateToPage(
-        next,
-        duration: const Duration(milliseconds: 600),
-        curve: Curves.easeInOut,
-      );
-    }
-    Future.delayed(const Duration(seconds: 4), _autoSlide);
+  void _startAutoSlide() {
+    _autoSlideTimer?.cancel();
+    _autoSlideTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+      if (!mounted) return;
+      if (_pageController.hasClients) {
+        final next = (_currentPage + 1) % _banners.length;
+        _pageController.animateToPage(
+          next,
+          duration: const Duration(milliseconds: 600),
+          curve: Curves.easeInOut,
+        );
+      }
+    });
   }
 
   @override
   void dispose() {
+    _autoSlideTimer?.cancel();
     _pageController.dispose();
     super.dispose();
   }
@@ -132,8 +137,13 @@ class _HeroCarouselState extends State<HeroCarousel> {
           child: Stack(
             children: [
               PageView.builder(
+                key: const ValueKey('hero_page_view'),
                 controller: _pageController,
-                onPageChanged: (index) => setState(() => _currentPage = index),
+                onPageChanged: (index) {
+                  if (mounted) {
+                    setState(() => _currentPage = index);
+                  }
+                },
                 itemCount: _banners.length,
                 itemBuilder: (context, index) {
                   final banner = _banners[index];
