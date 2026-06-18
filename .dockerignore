@@ -1,0 +1,29 @@
+# Git
+.git/
+.gitignore
+
+# Flutter/Dart
+.dart_tool/
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+.metadata
+.packages
+pubspec.lock  # mantido fora para não conflitar? Opcional, mas geralmente deixamos
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# SO
+.DS_Store
+Thumbs.db
+
+# Testes (não necessários para build web em produção)
+test/
+
+# Outros
+README.md
+Dockerfile
+.dockerignore
