@@ -85,12 +85,13 @@ class _LoginSheetState extends State<LoginSheet> {
         top: 20,
         bottom: MediaQuery.of(context).viewInsets.bottom + 24,
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Handle
-          Center(
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Handle
+            Center(
             child: Container(
               width: 40,
               height: 4,
@@ -219,7 +220,8 @@ class _LoginSheetState extends State<LoginSheet> {
             ),
           ),
           const SizedBox(height: 8),
-        ],
+          ],
+        ),
       ),
     );
   }

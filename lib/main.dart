@@ -10,6 +10,7 @@ import 'providers/menu_provider.dart';
 import 'providers/auth_provider.dart';
 import 'theme/app_theme.dart';
 import 'screens/menu_screen.dart';
+import 'services/kiosk_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -18,6 +19,8 @@ void main() async {
     url: SupabaseConfig.url,
     anonKey: SupabaseConfig.anonKey,
   );
+
+  await KioskService.initialize();
 
   runApp(const TachaoApp());
 }

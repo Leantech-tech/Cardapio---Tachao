@@ -1,4 +1,8 @@
+import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:kiosk_mode/kiosk_mode.dart';
 import 'package:animate_do/animate_do.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -10,7 +14,7 @@ import '../providers/theme_provider.dart';
 import '../providers/auth_provider.dart';
 import '../theme/app_theme.dart';
 import '../utils/store_status_helper.dart';
-import '../widgets/hero_carousel.dart';
+import '../widgets/screensaver_carousel.dart';
 import '../widgets/product_card.dart';
 import '../widgets/login_sheet.dart';
 import '../widgets/table_link_sheet.dart';
@@ -18,6 +22,7 @@ import '../widgets/product_card_grid.dart';
 import '../widgets/barcode_scanner_screen.dart';
 import '../widgets/comanda_viewer_sheet.dart';
 import '../services/comanda_service.dart';
+import '../services/kiosk_service.dart';
 import 'cart_screen.dart';
 import 'product_detail_screen.dart';
 
@@ -28,9 +33,17 @@ class MenuScreen extends StatefulWidget {
   State<MenuScreen> createState() => _MenuScreenState();
 }
 
-class _MenuScreenState extends State<MenuScreen> {
+class _MenuScreenState extends State<MenuScreen> with WidgetsBindingObserver {
   String selectedCategoryId = '';
-  final ScrollController _productsScrollController = ScrollController();
+
+  // Controle do gesto secreto para saída administrativa do modo quiosque.
+  int _adminTapCount = 0;
+  Timer? _adminTapResetTimer;
+
+  // Controle de inatividade para o screensaver do carrossel.
+  Timer? _inactivityTimer;
+  bool _isScreensaverActive = false;
+  static const _inactivityDuration = Duration(minutes: 1);
 
   List<Product> getFilteredProducts(List<Product> allProducts) {
     return allProducts
@@ -49,9 +62,96 @@ class _MenuScreenState extends State<MenuScreen> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _startInactivityTimer();
+  }
+
+  @override
   void dispose() {
-    _productsScrollController.dispose();
+    _adminTapResetTimer?.cancel();
+    _inactivityTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  void _startInactivityTimer() {
+    _inactivityTimer?.cancel();
+    _inactivityTimer = Timer(_inactivityDuration, () {
+      if (mounted) {
+        setState(() => _isScreensaverActive = true);
+      }
+    });
+  }
+
+  void _resetInactivityTimer() {
+    if (_isScreensaverActive) {
+      setState(() => _isScreensaverActive = false);
+    }
+    _startInactivityTimer();
+  }
+
+  void _handleUserInteraction([_]) {
+    _resetInactivityTimer();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Quando o app volta para o primeiro plano, garante que as barras do sistema
+    // permaneçam ocultas no modo quiosque.
+    if (state == AppLifecycleState.resumed) {
+      KioskService.restoreImmersiveMode();
+    }
+  }
+
+  /// Gesto administrativo: tocar 5 vezes no logo em menos de 2 segundos
+  /// permite sair do modo quiosque para manutenção.
+  void _handleAdminLogoTap() {
+    _adminTapCount++;
+    _adminTapResetTimer?.cancel();
+    _adminTapResetTimer = Timer(const Duration(seconds: 2), () {
+      if (mounted) setState(() => _adminTapCount = 0);
+    });
+
+    if (_adminTapCount >= 5) {
+      _adminTapCount = 0;
+      _adminTapResetTimer?.cancel();
+      _showKioskExitDialog();
+    }
+  }
+
+  void _showKioskExitDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Text('Sair do Modo Quiosque'),
+        content: const Text(
+          'Deseja desativar o modo quiosque para realizar manutenção no tablet?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('CANCELAR'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              Navigator.of(context).pop();
+              await KioskService.disable();
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Modo quiosque desativado. Reinicie o app para reativar.'),
+                  ),
+                );
+              }
+            },
+            child: const Text('SAIR DO QUIOSQUE'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _openProductDetail(Product product) {
@@ -305,6 +405,31 @@ class _MenuScreenState extends State<MenuScreen> {
                     );
                   },
                 ),
+              if (authProvider.isLoggedIn)
+                ListTile(
+                  leading: const Icon(Icons.exit_to_app, color: Colors.red),
+                  title: Text(
+                    'Sair do App',
+                    style: GoogleFonts.inter(
+                      fontWeight: FontWeight.w600,
+                      color: Colors.red,
+                    ),
+                  ),
+                  onTap: () async {
+                    Navigator.pop(context);
+                    // Desativa o modo quiosque para permitir fechar o app.
+                    try {
+                      await stopKioskMode();
+                    } catch (_) {
+                      // Ignora erro: pode já estar fora do modo quiosque.
+                    }
+                    if (Platform.isAndroid) {
+                      SystemNavigator.pop();
+                    } else {
+                      exit(0);
+                    }
+                  },
+                ),
             ],
           ),
         ),
@@ -378,55 +503,52 @@ class _MenuScreenState extends State<MenuScreen> {
           right: BorderSide(color: AppTheme.border(context)),
         ),
       ),
-      child: ListView.builder(
+      child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 6),
-        itemCount: categories.length,
-        itemBuilder: (context, index) {
-          final category = categories[index];
-          final isSelected = category.id == selectedCategoryId;
-          return GestureDetector(
-            onTap: () {
-              setState(() {
-                selectedCategoryId = category.id;
-              });
-              if (_productsScrollController.hasClients) {
-                _productsScrollController.jumpTo(0);
-              }
-            },
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              curve: Curves.easeInOut,
-              margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
-              decoration: BoxDecoration(
-                color: isSelected ? AppTheme.tachaoRed : Colors.transparent,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    category.icon,
-                    size: isTablet ? 26 : 20,
-                    color: isSelected ? Colors.white : AppTheme.textSecondary(context),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    category.displayName,
-                    style: GoogleFonts.inter(
-                      fontSize: isTablet ? 12 : 9,
-                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                      color: isSelected ? Colors.white : AppTheme.textPrimary(context),
+        child: Column(
+          children: categories.map((category) {
+            final isSelected = category.id == selectedCategoryId;
+            return GestureDetector(
+              onTap: () {
+                setState(() {
+                  selectedCategoryId = category.id;
+                });
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                curve: Curves.easeInOut,
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+                decoration: BoxDecoration(
+                  color: isSelected ? AppTheme.tachaoRed : Colors.transparent,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      category.icon,
+                      size: isTablet ? 26 : 20,
+                      color: isSelected ? Colors.white : AppTheme.textSecondary(context),
                     ),
-                    textAlign: TextAlign.center,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
+                    const SizedBox(height: 6),
+                    Text(
+                      category.displayName,
+                      style: GoogleFonts.inter(
+                        fontSize: isTablet ? 12 : 9,
+                        fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                        color: isSelected ? Colors.white : AppTheme.textPrimary(context),
+                      ),
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
               ),
-            ),
-          );
-        },
+            );
+          }).toList(),
+        ),
       ),
     );
   }
@@ -437,39 +559,45 @@ class _MenuScreenState extends State<MenuScreen> {
     final menuProvider = context.watch<MenuProvider>();
 
     if (menuProvider.isLoading) {
-      return Scaffold(
-        backgroundColor: AppTheme.background(context),
-        body: const Center(
-          child: CircularProgressIndicator(color: AppTheme.tachaoRed),
+      return const PopScope(
+        canPop: false,
+        child: Scaffold(
+          backgroundColor: AppTheme.tachaoRed,
+          body: Center(
+            child: CircularProgressIndicator(color: Colors.white),
+          ),
         ),
       );
     }
 
     if (menuProvider.error != null) {
-      return Scaffold(
-        backgroundColor: AppTheme.background(context),
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.wifi_off, size: 64, color: Colors.grey[400]),
-              const SizedBox(height: 16),
-              Text(
-                menuProvider.error!,
-                style: GoogleFonts.inter(fontSize: 14, color: AppTheme.textSecondary(context)),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 16),
-              ElevatedButton.icon(
-                onPressed: menuProvider.refresh,
-                icon: const Icon(Icons.refresh),
-                label: const Text('Tentar novamente'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.tachaoRed,
-                  foregroundColor: Colors.white,
+      return PopScope(
+        canPop: false,
+        child: Scaffold(
+          backgroundColor: AppTheme.background(context),
+          body: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.wifi_off, size: 64, color: Colors.grey[400]),
+                const SizedBox(height: 16),
+                Text(
+                  menuProvider.error!,
+                  style: GoogleFonts.inter(fontSize: 14, color: AppTheme.textSecondary(context)),
+                  textAlign: TextAlign.center,
                 ),
-              ),
-            ],
+                const SizedBox(height: 16),
+                ElevatedButton.icon(
+                  onPressed: menuProvider.refresh,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Tentar novamente'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.tachaoRed,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       );
@@ -492,8 +620,23 @@ class _MenuScreenState extends State<MenuScreen> {
     final filteredProducts = getFilteredProducts(allProducts);
     final sectionTitle = getSectionTitle(categories);
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
+    final screensaverWidget = _isScreensaverActive
+        ? Positioned.fill(
+            child: ScreensaverCarousel(
+              products: allProducts,
+              onInteract: _handleUserInteraction,
+            ),
+          )
+        : const SizedBox.shrink();
+
+    return Stack(
+      children: [
+        Listener(
+          behavior: HitTestBehavior.translucent,
+      onPointerDown: _handleUserInteraction,
+      onPointerMove: _handleUserInteraction,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
         final width = constraints.maxWidth;
         final isTablet = width >= 700;
         final isDesktop = width >= 1100;
@@ -504,12 +647,11 @@ class _MenuScreenState extends State<MenuScreen> {
             ? width * 0.08
             : (isTablet ? 32.0 : 16.0);
 
-        final screenHeight = MediaQuery.of(context).size.height;
-        final productsAreaHeight = screenHeight * 0.88;
-
-        return Scaffold(
-          backgroundColor: AppTheme.background(context),
-          body: SafeArea(
+        return PopScope(
+          canPop: false,
+          child: Scaffold(
+            backgroundColor: AppTheme.background(context),
+            body: SafeArea(
             child: RefreshIndicator(
               onRefresh: () async => menuProvider.refresh(),
               color: AppTheme.tachaoRed,
@@ -534,10 +676,12 @@ class _MenuScreenState extends State<MenuScreen> {
                           children: [
                             Row(
                               children: [
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(12),
-                                  child: Image.asset(
-                                    'assets/images/logo.png',
+                                GestureDetector(
+                                  onTap: _handleAdminLogoTap,
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(12),
+                                    child: Image.asset(
+                                      'assets/images/logo.png',
                                     height: isTablet ? 72 : 56,
                                     width: isTablet ? 72 : 56,
                                     fit: BoxFit.cover,
@@ -553,6 +697,7 @@ class _MenuScreenState extends State<MenuScreen> {
                                         Icons.restaurant,
                                         color: AppTheme.textSecondary(context),
                                       ),
+                                    ),
                                     ),
                                   ),
                                 ),
@@ -654,141 +799,126 @@ class _MenuScreenState extends State<MenuScreen> {
                         ),
                       ),
                     ),
-                    // Hero Carousel
-                    FadeIn(
-                      duration: const Duration(milliseconds: 600),
-                      child: Padding(
-                        padding: EdgeInsets.only(
-                          top: isTablet ? 8 : 4,
-                          bottom: isTablet ? 16 : 12,
-                        ),
-                        child: HeroCarousel(products: allProducts),
-                      ),
-                    ),
-                    // Search removed
-                    // Main content: Sidebar categories + Products (each with independent scroll)
+                    // Main content: Sidebar categories + Products (single scroll)
                     if (categories.isEmpty)
                       const SizedBox.shrink()
                     else
-                      SizedBox(
-                        height: productsAreaHeight,
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Category Sidebar - independent scroll
-                            _buildCategorySidebar(context, isTablet, categories),
-                            // Products area - independent scroll
-                            Expanded(
-                              child: Padding(
-                                padding: EdgeInsets.only(right: horizontalPadding),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    // Section Title + Product Count
-                                    Padding(
-                                      padding: const EdgeInsets.fromLTRB(
-                                        12,
-                                        12,
-                                        0,
-                                        8,
-                                      ),
-                                      child: Row(
-                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                        children: [
-                                          Text(
-                                            sectionTitle,
-                                            style: GoogleFonts.poppins(
-                                              fontSize: isTablet ? 20 : 18,
-                                              fontWeight: FontWeight.w700,
-                                              color: AppTheme.textPrimary(context),
-                                            ),
-                                          ),
-                                          Text(
-                                            '${filteredProducts.length} item${filteredProducts.length != 1 ? 's' : ''}',
-                                            style: GoogleFonts.inter(
-                                              fontSize: 13,
-                                              color: AppTheme.textSecondary(context),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Category Sidebar
+                          _buildCategorySidebar(context, isTablet, categories),
+                          // Products area
+                          Expanded(
+                            child: Padding(
+                              padding: EdgeInsets.only(right: horizontalPadding),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  // Section Title + Product Count
+                                  Padding(
+                                    padding: const EdgeInsets.fromLTRB(
+                                      12,
+                                      12,
+                                      0,
+                                      8,
                                     ),
-                                    // Products list with independent scroll
-                                    Expanded(
-                                      child: filteredProducts.isEmpty
-                                          ? Center(
-                                              child: Column(
-                                                mainAxisAlignment: MainAxisAlignment.center,
-                                                children: [
-                                                  Icon(
-                                                    Icons.restaurant_menu,
-                                                    size: 64,
-                                                    color: Colors.grey[300],
-                                                  ),
-                                                  const SizedBox(height: 16),
-                                                  Text(
-                                                    'Nenhum produto nesta categoria ainda.',
-                                                    style: GoogleFonts.inter(
-                                                      fontSize: 14,
-                                                      color: AppTheme.textSecondary(context),
-                                                    ),
-                                                    textAlign: TextAlign.center,
-                                                  ),
-                                                ],
+                                    child: Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text(
+                                          sectionTitle,
+                                          style: GoogleFonts.poppins(
+                                            fontSize: isTablet ? 20 : 18,
+                                            fontWeight: FontWeight.w700,
+                                            color: AppTheme.textPrimary(context),
+                                          ),
+                                        ),
+                                        Text(
+                                          '${filteredProducts.length} item${filteredProducts.length != 1 ? 's' : ''}',
+                                          style: GoogleFonts.inter(
+                                            fontSize: 13,
+                                            color: AppTheme.textSecondary(context),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  // Products list (no independent scroll)
+                                  filteredProducts.isEmpty
+                                      ? Center(
+                                          child: Column(
+                                            mainAxisAlignment: MainAxisAlignment.center,
+                                            children: [
+                                              Icon(
+                                                Icons.restaurant_menu,
+                                                size: 64,
+                                                color: Colors.grey[300],
                                               ),
-                                            )
-                                          : isGrid
-                                              ? GridView.builder(
-                                                  controller: _productsScrollController,
-                                                  padding: const EdgeInsets.fromLTRB(
-                                                    12,
-                                                    8,
-                                                    0,
-                                                    32,
-                                                  ),
-                                                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                                                    crossAxisCount: crossAxisCount,
-                                                    childAspectRatio: 0.72,
-                                                    crossAxisSpacing: 16,
-                                                    mainAxisSpacing: 16,
-                                                  ),
-                                                  itemCount: filteredProducts.length,
-                                                  itemBuilder: (context, index) {
-                                                    final product = filteredProducts[index];
-                                                    return ProductCardGrid(
-                                                      key: ValueKey('grid_${product.id}'),
-                                                      product: product,
-                                                      index: index,
-                                                      onTap: () => _openProductDetail(product),
-                                                    );
-                                                  },
-                                                )
-                                              : ListView.builder(
-                                                  controller: _productsScrollController,
-                                                  padding: const EdgeInsets.fromLTRB(
-                                                    12,
-                                                    8,
-                                                    0,
-                                                    32,
-                                                  ),
-                                                  itemCount: filteredProducts.length,
-                                                  itemBuilder: (context, index) {
-                                                    final product = filteredProducts[index];
-                                                    return ProductCard(
-                                                      key: ValueKey('list_${product.id}'),
-                                                      product: product,
-                                                      index: index,
-                                                      onTap: () => _openProductDetail(product),
-                                                    );
-                                                  },
+                                              const SizedBox(height: 16),
+                                              Text(
+                                                'Nenhum produto nesta categoria ainda.',
+                                                style: GoogleFonts.inter(
+                                                  fontSize: 14,
+                                                  color: AppTheme.textSecondary(context),
                                                 ),
-                                    ),
-                                  ],
-                                ),
+                                                textAlign: TextAlign.center,
+                                              ),
+                                            ],
+                                          ),
+                                        )
+                                      : isGrid
+                                          ? GridView.builder(
+                                              physics: const NeverScrollableScrollPhysics(),
+                                              shrinkWrap: true,
+                                              padding: const EdgeInsets.fromLTRB(
+                                                12,
+                                                8,
+                                                0,
+                                                32,
+                                              ),
+                                              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                                                crossAxisCount: crossAxisCount,
+                                                childAspectRatio: 0.72,
+                                                crossAxisSpacing: 16,
+                                                mainAxisSpacing: 16,
+                                              ),
+                                              itemCount: filteredProducts.length,
+                                              itemBuilder: (context, index) {
+                                                final product = filteredProducts[index];
+                                                return ProductCardGrid(
+                                                  key: ValueKey('grid_${product.id}'),
+                                                  product: product,
+                                                  index: index,
+                                                  onTap: () => _openProductDetail(product),
+                                                );
+                                              },
+                                            )
+                                          : ListView.builder(
+                                              physics: const NeverScrollableScrollPhysics(),
+                                              shrinkWrap: true,
+                                              padding: const EdgeInsets.fromLTRB(
+                                                12,
+                                                8,
+                                                0,
+                                                32,
+                                              ),
+                                              itemCount: filteredProducts.length,
+                                              itemBuilder: (context, index) {
+                                                final product = filteredProducts[index];
+                                                return ProductCard(
+                                                  key: ValueKey('list_${product.id}'),
+                                                  product: product,
+                                                  index: index,
+                                                  onTap: () => _openProductDetail(product),
+                                                );
+                                              },
+                                            ),
+                                ],
                               ),
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                     // Bottom padding to give some breathing room at the end of the scroll
                     const SizedBox(height: 24),
@@ -827,8 +957,13 @@ class _MenuScreenState extends State<MenuScreen> {
                   ),
                 )
               : null,
+          ),
         );
       },
-    );
+    ),
+  ),
+    screensaverWidget,
+  ],
+);
   }
 }

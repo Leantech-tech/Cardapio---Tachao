@@ -232,380 +232,549 @@ class _ProductDetailScreenState extends State<ProductDetailScreen>
     }
   }
 
-  Widget _buildProductImage(BuildContext context) {
-    return ProductImage(
-      product: widget.product,
-      fit: BoxFit.cover,
+  Widget _buildProductImage(BuildContext context, {double size = 340}) {
+    return ClipRect(
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: Transform.scale(
+          scale: 1.18,
+          child: ProductImage(
+            product: widget.product,
+            fit: BoxFit.cover,
+          ),
+        ),
+      ),
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final hasOptions = widget.product.optionGroups.isNotEmpty;
-    final canAdd = _canAddToCart();
-
-    return Scaffold(
-      backgroundColor: AppTheme.background(context),
-      body: CustomScrollView(
-        slivers: [
-          // SliverAppBar with Hero image
-          SliverAppBar(
-            expandedHeight: 320,
-            pinned: true,
-            backgroundColor: AppTheme.background(context),
-            elevation: 0,
-            leading: Container(
-              margin: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.3),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: IconButton(
-                icon: const Icon(Icons.arrow_back, color: Colors.white),
-                onPressed: () => Navigator.pop(context),
-              ),
-            ),
-            flexibleSpace: FlexibleSpaceBar(
-              background: Stack(
-                fit: StackFit.expand,
-                children: [
-                  _buildProductImage(context),
-                  // Gradient overlay at bottom
-                  Positioned(
-                    bottom: 0,
-                    left: 0,
-                    right: 0,
-                    child: Container(
-                      height: 100,
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            Colors.transparent,
-                            Colors.black.withValues(alpha: 0.5),
-                          ],
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                        ),
-                      ),
-                    ),
-                  ),
-                  // Badge
-                  if (widget.product.badge != null)
-                    Positioned(
-                      top: 80,
-                      left: 16,
-                      child: ProductBadge(badge: widget.product.badge!),
-                    ),
-                ],
-              ),
-            ),
+  Widget _buildImageWithBadge(BuildContext context, {double size = 300}) {
+    return Stack(
+      children: [
+        _buildProductImage(context, size: size),
+        if (widget.product.badge != null)
+          Positioned(
+            top: 8,
+            left: 8,
+            child: ProductBadge(badge: widget.product.badge!),
           ),
-          // Content
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Name
-                  Text(
-                    widget.product.name,
-                    style: GoogleFonts.poppins(
-                      fontSize: 26,
-                      fontWeight: FontWeight.w700,
-                      color: AppTheme.textPrimary(context),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  const SizedBox(height: 16),
-                  // Price
-                  Text(
-                    widget.product.priceDisplay,
-                    style: GoogleFonts.poppins(
-                      fontSize: 24,
-                      fontWeight: FontWeight.w700,
-                      color: AppTheme.tachaoRed,
-                    ),
-                  ),
-                  if (hasOptions)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Text(
-                        '+ opções',
-                        style: GoogleFonts.inter(
-                          fontSize: 12,
-                          color: AppTheme.textSecondary(context),
-                        ),
-                      ),
-                    ),
-                  const SizedBox(height: 24),
-                  Divider(color: AppTheme.border(context), thickness: 1),
-                  const SizedBox(height: 20),
-                  // Description
-                  Text(
-                    'Descrição',
-                    style: GoogleFonts.poppins(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: AppTheme.textPrimary(context),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    widget.product.description,
-                    style: GoogleFonts.inter(
-                      fontSize: 14,
-                      color: AppTheme.textSecondary(context),
-                      height: 1.6,
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  // Option Groups
-                  if (hasOptions)
-                    ...widget.product.optionGroups.map((group) {
-                      final selectedCount =
-                          (_selectedOptions[group.id] ?? []).length;
-                      final effectiveMax = _effectiveQtdMax(group);
-                      final isValid = selectedCount >= group.qtdMin &&
-                          selectedCount <= effectiveMax;
+      ],
+    );
+  }
 
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  group.name,
-                                  style: GoogleFonts.poppins(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppTheme.textPrimary(context),
+  Widget _buildProductInfo(BuildContext context) {
+    final hasOptions = widget.product.optionGroups.isNotEmpty;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Nome
+        Text(
+          widget.product.name,
+          style: GoogleFonts.poppins(
+            fontSize: 20,
+            fontWeight: FontWeight.w700,
+            color: AppTheme.textPrimary(context),
+          ),
+        ),
+        const SizedBox(height: 4),
+        // Preço
+        Row(
+          children: [
+            Text(
+              widget.product.priceDisplay,
+              style: GoogleFonts.poppins(
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+                color: AppTheme.tachaoRed,
+              ),
+            ),
+            if (hasOptions)
+              Padding(
+                padding: const EdgeInsets.only(left: 6),
+                child: Text(
+                  '+ opções',
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    color: AppTheme.textSecondary(context),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  void _showIngredientsSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppTheme.surface(context),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.45,
+        minChildSize: 0.3,
+        maxChildSize: 0.7,
+        expand: false,
+        builder: (context, scrollController) {
+          return Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: AppTheme.border(context),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Ingredientes',
+                  style: GoogleFonts.poppins(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.textPrimary(context),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  widget.product.name,
+                  style: GoogleFonts.inter(
+                    fontSize: 14,
+                    color: AppTheme.textSecondary(context),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Expanded(
+                  child: widget.product.ingredients.isEmpty
+                      ? Center(
+                          child: Text(
+                            'Nenhum ingrediente informado.',
+                            style: GoogleFonts.inter(
+                              fontSize: 14,
+                              color: AppTheme.textSecondary(context),
+                            ),
+                          ),
+                        )
+                      : ListView.separated(
+                          controller: scrollController,
+                          itemCount: widget.product.ingredients.length,
+                          separatorBuilder: (_, _) => const Divider(height: 1),
+                          itemBuilder: (context, index) {
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.check_circle,
+                                    size: 18,
+                                    color: AppTheme.tachaoRed,
                                   ),
-                                ),
-                              ),
-                              if (group.qtdMin > 0 || effectiveMax > 1)
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 4,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: isValid
-                                        ? Colors.green.withValues(alpha: 0.1)
-                                        : Colors.orange.withValues(alpha: 0.1),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Text(
-                                    group.qtdMin == effectiveMax
-                                        ? 'Escolha ${group.qtdMin}'
-                                        : group.qtdMin > 0
-                                            ? 'Min ${group.qtdMin} / Max $effectiveMax'
-                                            : 'Max $effectiveMax',
-                                    style: GoogleFonts.inter(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w500,
-                                      color: isValid
-                                          ? Colors.green[700]
-                                          : Colors.orange[700],
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Text(
+                                      widget.product.ingredients[index],
+                                      style: GoogleFonts.inter(
+                                        fontSize: 14,
+                                        color: AppTheme.textPrimary(context),
+                                      ),
                                     ),
                                   ),
-                                ),
-                            ],
-                          ),
-                          const SizedBox(height: 10),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: group.options.map((option) {
-                              final isSelected = _isSelected(group, option);
-                              return GestureDetector(
-                                onTap: () => _toggleOption(group, option),
-                                child: AnimatedContainer(
-                                  duration: const Duration(milliseconds: 200),
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 14,
-                                    vertical: 10,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: isSelected
-                                        ? AppTheme.tachaoRed
-                                        : AppTheme.inputBg(context),
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: isSelected
-                                        ? null
-                                        : Border.all(
-                                            color: AppTheme.border(context),
-                                          ),
-                                  ),
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          if (_isEffectivelyMultipleChoice(group))
-                                            Padding(
-                                              padding: const EdgeInsets.only(
-                                                right: 6,
-                                              ),
-                                              child: Icon(
-                                                isSelected
-                                                    ? Icons.check_box
-                                                    : Icons.check_box_outline_blank,
-                                                size: 16,
-                                                color: isSelected
-                                                    ? Colors.white
-                                                    : AppTheme.textSecondary(context),
-                                              ),
-                                            ),
-                                          Text(
-                                            option.name,
-                                            style: GoogleFonts.inter(
-                                              fontSize: 13,
-                                              fontWeight: isSelected
-                                                  ? FontWeight.w600
-                                                  : FontWeight.w500,
-                                              color: isSelected
-                                                  ? Colors.white
-                                                  : AppTheme.textPrimary(context),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      if (option.priceModifier > 0)
-                                        Text(
-                                          '+ R\$ ${option.priceModifier.toStringAsFixed(2).replaceAll('.', ',')}',
-                                          style: GoogleFonts.inter(
-                                            fontSize: 11,
-                                            color: isSelected
-                                                ? Colors.white
-                                                    .withValues(alpha: 0.85)
-                                                : AppTheme.textSecondary(context),
-                                          ),
-                                        ),
-                                    ],
-                                  ),
-                                ),
-                              );
-                            }).toList(),
-                          ),
-                          const SizedBox(height: 20),
-                        ],
-                      );
-                    }),
-                  // Ingredients
-                  Text(
-                    'Ingredientes',
-                    style: GoogleFonts.poppins(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: AppTheme.textPrimary(context),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: widget.product.ingredients.map((ingredient) {
-                      return Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 8,
+                                ],
+                              ),
+                            );
+                          },
                         ),
-                        decoration: BoxDecoration(
-                          color: AppTheme.inputBg(context),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Text(
-                          ingredient,
-                          style: GoogleFonts.inter(
-                            fontSize: 13,
-                            color: AppTheme.textSecondary(context),
-                          ),
-                        ),
-                      );
-                    }).toList(),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildIngredients(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+            onPressed: () => _showIngredientsSheet(context),
+            icon: Icon(
+              Icons.restaurant_menu_outlined,
+              color: AppTheme.tachaoRed,
+              size: 18,
+            ),
+            label: Text(
+              'Ingredientes',
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: AppTheme.tachaoRed,
+              ),
+            ),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppTheme.tachaoRed,
+              side: BorderSide(color: AppTheme.tachaoRed),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+      ),
+    );
+  }
+
+  Widget _buildFields(BuildContext context) {
+    final hasDescription = widget.product.description.trim().isNotEmpty;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Descrição
+        if (hasDescription) ...[
+          _buildSectionTitle(context, 'Descrição'),
+          const SizedBox(height: 6),
+          Text(
+            widget.product.description,
+            style: GoogleFonts.inter(
+              fontSize: 14,
+              color: AppTheme.textSecondary(context),
+              height: 1.5,
+            ),
+          ),
+          const SizedBox(height: 16),
+        ],
+        // Observação
+        _buildSectionTitle(context, 'Observação'),
+        const SizedBox(height: 6),
+        TextField(
+          controller: _obsController,
+          decoration: InputDecoration(
+            hintText: 'Ex: Sem açúcar...',
+            hintStyle: GoogleFonts.inter(
+              fontSize: 13,
+              color: Colors.grey[400],
+            ),
+            filled: true,
+            fillColor: AppTheme.inputBg(context),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: BorderSide.none,
+            ),
+            contentPadding: const EdgeInsets.all(12),
+          ),
+          maxLines: 2,
+          style: GoogleFonts.inter(fontSize: 14),
+        ),
+        const SizedBox(height: 16),
+        // Quantidade
+        _buildSectionTitle(context, 'Quantidade'),
+        const SizedBox(height: 6),
+        Container(
+          decoration: BoxDecoration(
+            color: AppTheme.inputBg(context),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildQuantityButton(
+                icon: Icons.remove,
+                onTap: () {
+                  if (quantity > 1) {
+                    setState(() => quantity--);
+                  }
+                },
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Text(
+                  '$quantity',
+                  style: GoogleFonts.poppins(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.textPrimary(context),
                   ),
-                  const SizedBox(height: 24),
-                  // Observation
-                  Text(
-                    'Observações',
-                    style: GoogleFonts.poppins(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: AppTheme.textPrimary(context),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: _obsController,
-                    decoration: InputDecoration(
-                      hintText: 'Alguma observação? Ex: Sem açúcar...',
-                      hintStyle: GoogleFonts.inter(
-                        fontSize: 13,
-                        color: Colors.grey[400],
-                      ),
-                      filled: true,
-                      fillColor: AppTheme.inputBg(context),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide.none,
-                      ),
-                      contentPadding: const EdgeInsets.all(14),
-                    ),
-                    maxLines: 2,
-                    style: GoogleFonts.inter(fontSize: 14),
-                  ),
-                  const SizedBox(height: 24),
-                  // Quantity
-                  Row(
-                    children: [
-                      Text(
-                        'Quantidade',
+                ),
+              ),
+              _buildQuantityButton(
+                icon: Icons.add,
+                onTap: () => setState(() => quantity++),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildOptionGroups(BuildContext context) {
+    if (widget.product.optionGroups.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final hasSaborGroup = widget.product.optionGroups.any(
+      (g) => g.name.toLowerCase().contains('sabor'),
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Divider(color: AppTheme.border(context), thickness: 1),
+        const SizedBox(height: 20),
+        ...widget.product.optionGroups.map((group) {
+          final selectedCount = (_selectedOptions[group.id] ?? []).length;
+          final effectiveMax = _effectiveQtdMax(group);
+          final isValid = selectedCount >= group.qtdMin &&
+              selectedCount <= effectiveMax;
+          final isBolas = group.name.trim().toLowerCase() == 'bolas';
+          final isSabor = group.name.toLowerCase().contains('sabor');
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (!isBolas)
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        group.name,
                         style: GoogleFonts.poppins(
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
                           color: AppTheme.textPrimary(context),
                         ),
                       ),
-                      const Spacer(),
+                    ),
+                    if (group.qtdMin > 0 || effectiveMax > 1)
                       Container(
-                        decoration: BoxDecoration(
-                          color: AppTheme.inputBg(context),
-                          borderRadius: BorderRadius.circular(12),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
                         ),
-                        child: Row(
-                          children: [
-                            _buildQuantityButton(
-                              icon: Icons.remove,
-                              onTap: () {
-                                if (quantity > 1) {
-                                  setState(() => quantity--);
-                                }
-                              },
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 16),
-                              child: Text(
-                                '$quantity',
-                                style: GoogleFonts.poppins(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppTheme.textPrimary(context),
-                                ),
-                              ),
-                            ),
-                            _buildQuantityButton(
-                              icon: Icons.add,
-                              onTap: () => setState(() => quantity++),
-                            ),
-                          ],
+                        decoration: BoxDecoration(
+                          color: isValid
+                              ? Colors.green.withValues(alpha: 0.1)
+                              : Colors.orange.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          group.qtdMin == effectiveMax
+                              ? 'Escolha ${group.qtdMin}'
+                              : group.qtdMin > 0
+                                  ? 'Min ${group.qtdMin} / Max $effectiveMax'
+                                  : 'Max $effectiveMax',
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                            color: isValid
+                                ? Colors.green[700]
+                                : Colors.orange[700],
+                          ),
                         ),
                       ),
-                    ],
+                  ],
+                ),
+              if (!isBolas) const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: group.options.map((option) {
+                  final isSelected = _isSelected(group, option);
+                  return GestureDetector(
+                    onTap: () => _toggleOption(group, option),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? AppTheme.tachaoRed
+                            : AppTheme.inputBg(context),
+                        borderRadius: BorderRadius.circular(12),
+                        border: isSelected
+                            ? null
+                            : Border.all(
+                                color: AppTheme.border(context),
+                              ),
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (_isEffectivelyMultipleChoice(group))
+                                Padding(
+                                  padding: const EdgeInsets.only(right: 6),
+                                  child: Icon(
+                                    isSelected
+                                        ? Icons.check_box
+                                        : Icons.check_box_outline_blank,
+                                    size: 16,
+                                    color: isSelected
+                                        ? Colors.white
+                                        : AppTheme.textSecondary(context),
+                                  ),
+                                ),
+                              Text(
+                                option.name,
+                                style: GoogleFonts.inter(
+                                  fontSize: 13,
+                                  fontWeight: isSelected
+                                      ? FontWeight.w600
+                                      : FontWeight.w500,
+                                  color: isSelected
+                                      ? Colors.white
+                                      : AppTheme.textPrimary(context),
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (option.priceModifier > 0)
+                            Text(
+                              '+ R\$ ${option.priceModifier.toStringAsFixed(2).replaceAll('.', ',')}',
+                              style: GoogleFonts.inter(
+                                fontSize: 11,
+                                color: isSelected
+                                    ? Colors.white.withValues(alpha: 0.85)
+                                    : AppTheme.textSecondary(context),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+              if (isSabor) ...[
+                const SizedBox(height: 20),
+                _buildIngredients(context),
+              ],
+              const SizedBox(height: 20),
+            ],
+          );
+        }),
+        // Fallback: ingredientes embaixo de todas as opções se não houver grupo de sabor
+        if (!hasSaborGroup) _buildIngredients(context),
+      ],
+    );
+  }
+
+  Widget _buildSectionTitle(BuildContext context, String title) {
+    return Text(
+      title,
+      style: GoogleFonts.poppins(
+        fontSize: 15,
+        fontWeight: FontWeight.w600,
+        color: AppTheme.textPrimary(context),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final canAdd = _canAddToCart();
+
+    return Scaffold(
+      backgroundColor: AppTheme.background(context),
+      appBar: AppBar(
+        backgroundColor: AppTheme.background(context),
+        elevation: 0,
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back, color: AppTheme.textPrimary(context)),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: Text(
+          'Adicionar pedido',
+          style: GoogleFonts.poppins(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: AppTheme.textPrimary(context),
+          ),
+        ),
+        centerTitle: true,
+      ),
+      body: CustomScrollView(
+        slivers: [
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Layout responsivo: imagem grande (300x300) sem cortar textos
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      const imageSize = 340.0;
+                      const gap = 16.0;
+                      const twoColumnThreshold = 700.0;
+
+                      if (constraints.maxWidth >= twoColumnThreshold) {
+                        // Tablets/desktops: imagem + infos à esquerda, campos + opções à direita
+                        return Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            SizedBox(
+                              width: imageSize,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  _buildImageWithBadge(
+                                    context,
+                                    size: imageSize,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  _buildProductInfo(context),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: gap),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  _buildFields(context),
+                                  const SizedBox(height: 8),
+                                  _buildOptionGroups(context),
+                                ],
+                              ),
+                            ),
+                          ],
+                        );
+                      }
+
+                      // Mobiles: imagem, campos, opções e depois infos
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Center(
+                            child: _buildImageWithBadge(
+                              context,
+                              size: imageSize,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          _buildFields(context),
+                          _buildOptionGroups(context),
+                          const SizedBox(height: 24),
+                          _buildProductInfo(context),
+                        ],
+                      );
+                    },
                   ),
-                  const SizedBox(height: 100),
+                  const SizedBox(height: 80),
                 ],
               ),
             ),
@@ -614,7 +783,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen>
       ),
       // Bottom floating button
       bottomNavigationBar: Container(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: AppTheme.surface(context),
           border: Border(
@@ -651,7 +820,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen>
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _added ? Colors.green[600] : AppTheme.tachaoRed,
                   foregroundColor: Colors.white,
-                  minimumSize: const Size(double.infinity, 56),
+                  minimumSize: const Size(double.infinity, 54),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14),
                   ),
@@ -722,7 +891,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen>
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(10),
         child: Icon(
           icon,
           color: AppTheme.tachaoRed,
